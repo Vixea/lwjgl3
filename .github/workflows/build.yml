@@ -6,158 +6,29 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - master
+      - riscv-ci-builds
 
 env:
-  JAVA8_HOME: jdk8
-  JAVA_HOME: jdk8
   ANT_OPTS: -Xmx1G
   LWJGL_BUILD_TYPE: nightly
-  ZULU_BUILD: 90.0.19-ca-jdk8.0.472
-  ZULU_BUILD16: 32.15-ca-jdk16.0.2
-  ZULU_BUILD25: 30.17-ca-jdk25.0.1
 
 jobs:
-  cache-kotlinc:
-    name: Compile templates and cache kotlinc output
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 3
-          ref: 'f0ec1437a6149dae00eaa27c47268e5e4efb129f'
-      - name: Download JDK
-        run: |
-          mkdir jdk8
-          curl https://cdn.azul.com/zulu/bin/zulu8.${ZULU_BUILD}-linux_x64.tar.gz | tar xz -C jdk8 --strip-components 1
-      - name: Compile templates
-        run: |
-          git clone https://github.com/LWJGL-CI/OculusSDK.git ../OculusSDK
-          ANT_OPTS=-Xmx4G ant -emacs compile-templates -Dbackend-threads=0
-      - name: Cache kotlinc output
-        uses: actions/cache/save@v3
-        with:
-          path: |
-            bin/classes/generator
-            bin/classes/templates
-          key: cache-kotlinc-${{ github.sha }}
-          enableCrossOsArchive: true
-
-  linux:
-    name: Linux
-    needs: cache-kotlinc
-    runs-on: ubuntu-latest
-    container:
-      image: almalinux:8
-    strategy:
-      fail-fast: false
-      matrix:
-        ARCH: [x64]
-        include:
-          - ARCH: x64
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Install git
-        run: dnf -y install git
-      - name: Clone repository
-        run: git clone --depth 3 https://github.com/${{ github.repository }}.git .
-      - name: Install build dependencies # make is necessary for -flto=auto
-        run: |
-          dnf -y install epel-release wget
-          wget https://pkgs.sysadmins.ws/el8/base/x86_64/raven-release-1.0.1-1.el8.noarch.rpm
-          rpm -ivh raven-release-1.0.1-1.el8.noarch.rpm
-          dnf config-manager --set-enabled powertools
-          dnf config-manager --set-enabled raven-extras
-          dnf -y update
-          dnf -y install gcc-toolset-15-gcc gcc-toolset-15-gcc-c++ ant awscli curl zstd make
-          mkdir jdk8
-          mkdir jdk25
-          curl -L https://cdn.azul.com/zulu/bin/zulu8.${ZULU_BUILD}-linux_x64.tar.gz | tar xz -C jdk8 --strip-components 1
-          curl -L https://cdn.azul.com/zulu/bin/zulu25.${ZULU_BUILD25}-linux_x64.tar.gz | tar xz -C jdk25 --strip-components 1
-      - name: Install LWJGL dependencies
-        run: |
-          dnf -y install \
-            libX11-devel \
-            libXt-devel \
-            gtk3-devel \
-            dbus-devel
-      - name: Restore kotlinc output
-        uses: actions/cache/restore@v3
-        with:
-          path: |
-            bin/classes/generator
-            bin/classes/templates
-          key: cache-kotlinc-${{ github.sha }}
-          enableCrossOsArchive: true
-          fail-on-cache-miss: true
-      - name: Generate bindings
-        run: ant -emacs clean-generated generate
-      - name: Build Java
-        run: ant -emacs compile
-      - name: Build native
-        run: |
-          source /opt/rh/gcc-toolset-15/enable || true
-          ant -emacs compile-native -Dgcc.version.print=true
-      - name: Run tests
-        run: ant -emacs tests
-      - name: Print test results
-        run: cat bin/test/testng-results.xml
-        if: failure()
-      - name: Run tests (JDK 25)
-        run: |
-          source /opt/rh/gcc-toolset-15/enable || true
-          JAVA_HOME=jdk25 ant -emacs tests -Dcore.java25=true
-      - name: Print test results
-        run: cat bin/test/testng-results.xml
-        if: failure()
-      - name: Run demo with OpenJDK
-        run: ant demo -Dclass=org.lwjgl.demo.util.lz4.HelloLZ4
-      - name: Build GraalVM Native Image
-        run: |
-          source /opt/rh/gcc-toolset-15/enable || true
-          mkdir jdk-graalvm
-          curl -L https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_linux-x64_bin.tar.gz | tar xz -C jdk-graalvm --strip-components 1
-          jdk-graalvm/bin/native-image -cp \
-          bin/classes/lwjgl/core:\
-          bin/classes/lwjgl/lz4:\
-          bin/classes/samples:\
-          modules/samples/src/test/resources:\
-          bin/libs/java/joml.jar:\
-          bin/libs/native:\
-          config/native-image \
-          org.lwjgl.demo.util.lz4.HelloLZ4 --verbose --no-fallback
-      - name: Run demo with GraalVM JIT
-        run: JAVA_HOME=jdk-graalvm ant demo -Dclass=org.lwjgl.demo.util.lz4.HelloLZ4
-      - name: Run demo with GraalVM Native Image
-        run: ./org.lwjgl.demo.util.lz4.hellolz4
-
-  linux-cross:
-    name: Linux Cross
-    needs: cache-kotlinc
+  linux-riscv64:
+    name: Linux riscv64 Build
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        ARCH: [arm64, ppc64le, riscv64]
+        ARCH: [riscv64]
         include:
-          # ----
-          - ARCH: arm64
-            CROSS_ARCH: arm64
-            TRIPLET: aarch64-linux-gnu
-          # ----
-          - ARCH: ppc64le
-            CROSS_ARCH: ppc64el
-            TRIPLET: powerpc64le-linux-gnu
           # ----
           - ARCH: riscv64
             CROSS_ARCH: riscv64
             TRIPLET: riscv64-linux-gnu
     env:
       LWJGL_BUILD_ARCH: ${{matrix.ARCH}}
-      JAVA_HOME: jdk16
+      JAVA_HOME: /usr/lib/jvm/openjdk-21/
+      JAVA8_HOME: /usr/lib/jvm/openjdk-21/ # Not actually required to be java 8, as it only makes sure no new features are used
     defaults:
       run:
         shell: bash
@@ -167,61 +38,29 @@ jobs:
         with:
           fetch-depth: 3
           ref: 'f0ec1437a6149dae00eaa27c47268e5e4efb129f'
-      - name: Install dependencies # make is necessary for -flto=auto
-        run: |
-          git config --global --add safe.directory $(pwd)
-          DEBIAN_FRONTEND=noninteractive sudo apt-get -yq update
-          DEBIAN_FRONTEND=noninteractive sudo apt-get -yq install ant awscli curl zstd make \
-            gcc-12-${{matrix.TRIPLET}} \
-            g++-12-${{matrix.TRIPLET}} \
-            libc6-dev-${{matrix.CROSS_ARCH}}-cross
-          mkdir jdk8
-          curl -L https://cdn.azul.com/zulu/bin/zulu8.${ZULU_BUILD}-linux_x64.tar.gz | tar xz -C jdk8 --strip-components 1
-          mkdir jdk16
-          curl -L https://cdn.azul.com/zulu/bin/zulu16.${ZULU_BUILD16}-linux_x64.tar.gz | tar xz -C jdk16 --strip-components 1
       - name: Apply riscv patches # necessary for RISC-V
         if: matrix.ARCH == 'riscv64'
         run: |
           curl -L https://raw.githubusercontent.com/Vixea/lwjgl-riscv-patches/refs/heads/master/diff.patch >> diff.patch
           git apply diff.patch
-      - name: Prepare cross-compilation for ${{matrix.CROSS_ARCH}}
-        run: |
-          sudo grep 'deb ' /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/ports.list
-          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
-          sudo sed -i 's#^deb [^ ]\+#deb [arch=${{matrix.CROSS_ARCH}}] https://ports.ubuntu.com/ubuntu-ports/#' /etc/apt/sources.list.d/ports.list
-          sudo dpkg --add-architecture ${{matrix.CROSS_ARCH}}
-          sudo apt-get update || true
-      - name: Install cross-compilation dependencies
-        run: |
-          DEBIAN_FRONTEND=noninteractive sudo apt-get -yq install \
-            libgtk-3-dev:${{matrix.CROSS_ARCH}} \
-            libatk-bridge2.0-dev:${{matrix.CROSS_ARCH}} \
-            libgdk-pixbuf2.0-dev:${{matrix.CROSS_ARCH}} \
-            libglu-dev:${{matrix.CROSS_ARCH}} \
-            libgl1-mesa-glx:${{matrix.CROSS_ARCH}} \
-            libx11-dev:${{matrix.CROSS_ARCH}} \
-            libxt-dev:${{matrix.CROSS_ARCH}} \
-            libdbus-1-dev:${{matrix.CROSS_ARCH}}
-      - name: Restore kotlinc output
-        uses: actions/cache/restore@v3
+      - uses: uraimo/run-on-arch-action@v3
         with:
-          path: |
-            bin/classes/generator
-            bin/classes/templates
-          key: cache-kotlinc-${{ github.sha }}
-          enableCrossOsArchive: true
-          fail-on-cache-miss: true
-      - name: Generate bindings
-        run: ant -emacs clean-generated generate
-      - name: Build Java
-        run: ant -emacs compile
-      - name: Build native
-        run: ant -emacs compile-native -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
-      - name: Build Release
-        env:
-          LWJGL_BUILD_OFFLINE: true
-        run: 
-          ant -emacs release -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
+          arch: riscv64
+          distro: ubuntu24.04
+          githubToken: ${{ github.token }}
+          dockerRunArgs: |
+            --volume "${{ github.workspace }}"
+          install: |
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y default-jdk git ant curl zstd make gcc-12 g++-12 libc6-dev
+            DEBIAN_FRONTEND=noninteractive apt-get install -y libgtk-3-dev libatk-bridge2.0-dev libgdk-pixbuf2.0-dev libglu-dev libx11-dev libxt-dev libdbus-1-dev # libgl1-mesa-glx
+          run: |
+            git config --global --add safe.directory $(pwd)
+            ANT_OPTS=-Xmx4G ant -emacs compile-templates -Dbackend-threads=0
+            ant -emacs clean-generated generate
+            ant -emacs compile
+            JAVA8_HOME=/usr/lib/jvm/openjdk-21/ ant -emacs compile-native -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
+            JAVA8_HOME=/usr/lib/jvm/openjdk-21/ LWJGL_BUILD_OFFLINE=true ant -emacs release -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1.0.0
