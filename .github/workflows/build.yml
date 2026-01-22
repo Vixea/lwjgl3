@@ -63,18 +63,12 @@ jobs:
             JAVA8_HOME=/usr/lib/jvm/openjdk-21/ LWJGL_BUILD_OFFLINE=true ant -emacs release -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1.0.0
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          name: Release ${{ github.ref }}
           draft: false
           prerelease: false
-      - name: Upload artifacts
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./bin/RELEASE/*
+          files: ./bin/RELEASE/*
