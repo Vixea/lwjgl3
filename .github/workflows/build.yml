@@ -61,14 +61,11 @@ jobs:
             ant -emacs compile
             JAVA8_HOME=/usr/lib/jvm/openjdk-21/ ant -emacs compile-native -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
             JAVA8_HOME=/usr/lib/jvm/openjdk-21/ LWJGL_BUILD_OFFLINE=true ant -emacs release -Dgcc.version=12 -Dgcc.version.print=true -Dgcc.libpath.opengl=/usr/lib/${{matrix.TRIPLET}}/mesa
-      - name: Create Release
-        id: create_release
+      - name: Release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          name: Release ${{ github.ref }}
           draft: false
           prerelease: false
           files: ./bin/RELEASE/*
